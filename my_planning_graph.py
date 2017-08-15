@@ -3,7 +3,6 @@ from aimacode.search import Problem
 from aimacode.utils import expr
 from lp_utils import decode_state
 
-
 class PgNode():
     """Base class for planning graph nodes.
 
@@ -449,7 +448,17 @@ class PlanningGraph():
         :param node_a2: PgNode_a
         :return: bool
         """
-        # TODO test for Inconsistent Effects between nodes
+
+        # check if any of node_a1's negative effects exist in node_a2's postive effects
+        for a1_neg_effect in node_a1.action.effect_rem:
+            if a1_neg_effect in node_a2.action.effect_add:
+                return True
+
+        # check if any of node_a2's negative effects exist in node_a1's postive effects
+        for a2_neg_effect in node_a2.action.effect_rem:
+            if a2_neg_effect in node_a1.action.effect_add:
+                return True
+
         return False
 
     def interference_mutex(self, node_a1: PgNode_a, node_a2: PgNode_a) -> bool:
@@ -466,7 +475,17 @@ class PlanningGraph():
         :param node_a2: PgNode_a
         :return: bool
         """
-        # TODO test for Interference between nodes
+
+        # check if any of node_a1's negative effects exist in node_a2's precondition
+        for a1_neg_effect in node_a1.action.effect_rem:
+            if a1_neg_effect in node_a2.action.precond_pos:
+                return True
+
+        # check if any of node_a2's negative effects exist in node_a1's precondition
+        for a2_neg_effect in node_a2.action.effect_rem:
+            if a2_neg_effect in node_a1.action.precond_pos:
+                return True
+
         return False
 
     def competing_needs_mutex(self, node_a1: PgNode_a, node_a2: PgNode_a) -> bool:
@@ -480,7 +499,21 @@ class PlanningGraph():
         :return: bool
         """
 
-        # TODO test for Competing Needs between nodes
+        # check if any of node_a1's postive preconditions exist in node_a2's negative preconditions
+        for a1_pos_precond in node_a1.action.precond_pos:
+            if a1_pos_precond in node_a2.action.precond_neg:
+                return True
+
+        # check if any of node_a2's postive preconditions exist in node_a1's negative preconditions 
+        for a2_pos_precond in node_a2.action.precond_pos:
+            if a2_pos_precond in node_a1.action.precond_neg:
+                return True
+        
+        # check if any of their parents are mutex
+        for a1_parent in node_a1.parents:
+            for a2_parent in node_a2.parents:
+                if a1_parent.is_mutex(a2_parent):
+                    return True
         return False
 
     def update_s_mutex(self, nodeset: set):
@@ -515,8 +548,7 @@ class PlanningGraph():
         :param node_s2: PgNode_s
         :return: bool
         """
-        # TODO test for negation between nodes
-        return False
+        return node_s1.symbol == node_s2.symbol and node_s1.is_pos != node_s2.is_pos
 
     def inconsistent_support_mutex(self, node_s1: PgNode_s, node_s2: PgNode_s):
         """
@@ -534,8 +566,12 @@ class PlanningGraph():
         :param node_s2: PgNode_s
         :return: bool
         """
-        # TODO test for Inconsistent Support between nodes
-        return False
+        
+        for s1_action in node_s1.parents:
+            for s2_action in node_s2.parents:
+                if not s1_action.is_mutex(s2_action):
+                    return False
+        return True
 
     def h_levelsum(self) -> int:
         """The sum of the level costs of the individual goals (admissible if goals independent)
@@ -543,6 +579,17 @@ class PlanningGraph():
         :return: int
         """
         level_sum = 0
-        # TODO implement
-        # for each goal in the problem, determine the level cost, then add them together
+        
+        # copy a list of goals
+        goals = self.problem.goal[:]
+
+        for index, literals in enumerate(self.s_levels):
+            for literal in literals:
+                if literal.is_pos == True and literal.symbol in goals:
+                    level_sum += index
+                    goals.remove(literal.symbol)
+
+                    if len(goals) == 0:
+                        break
+
         return level_sum
