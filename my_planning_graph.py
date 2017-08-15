@@ -303,13 +303,54 @@ class PlanningGraph():
         :return:
             adds A nodes to the current level in self.a_levels[level]
         """
-        # TODO add action A level to the planning graph as described in the Russell-Norvig text
-        # 1. determine what actions to add and create those PgNode_a objects
-        # 2. connect the nodes to the previous S literal level
-        # for example, the A0 level will iterate through all possible actions for the problem and add a PgNode_a to a_levels[0]
-        #   set iff all prerequisite literals for the action hold in S0.  This can be accomplished by testing
-        #   to see if a proposed PgNode_a has prenodes that are a subset of the previous S level.  Once an
-        #   action node is added, it MUST be connected to the S node instances in the appropriate s_level set.
+        if level < 0 or level >= len(self.s_levels):
+            raise Exception("add_action_level: Invalid level")
+
+        # inflate the a_levels array with placeholders, otherwise it will fail to assign a new level.
+        # e.g. assigning self.a_levels[0] to an empty array will throw exceptions
+        offset = level - len(self.a_levels) + 1
+        for i in range(offset):
+            self.a_levels.append([])
+
+        # produce intermediate structure to hold both positive and negative nodes for further processing.
+        # Format:
+        # "{
+        #   hash of node s: instance of s
+        # }"
+        literal_pos_symbols = {s.symbol: s for s in self.s_levels[level] if s.is_pos == True}
+        literal_neg_symbols = {s.symbol: s for s in self.s_levels[level] if s.is_pos == False}
+        
+        # init the result as empty list
+        actions = []
+        
+        for action in self.all_actions:
+            # create the PgNode for the action
+            node_a = PgNode_a(action)
+            # initialize the set of precondition s_nodes 
+            # which holds the reference to the node instance in the gragh
+            precond_s_nodes = set()
+            precond_satisfied = True
+            # check positive preconditions
+            for precond_pos in action.precond_pos:
+                if precond_pos in literal_pos_symbols:
+                    precond_s_nodes.add(literal_pos_symbols[precond_pos])
+                else:
+                    precond_satisfied = False
+                    break
+            # check negative preconditions
+            for precond_neg in action.precond_neg:
+                if precond_neg in literal_neg_symbols:
+                    precond_s_nodes.add(literal_neg_symbols[precond_neg])
+                else:
+                    precond_satisfied = False
+                    break
+            
+            if precond_satisfied:
+                # update the preconditions nodes with the references to the s_nodes in the graph
+                node_a.prenodes = precond_s_nodes
+                actions.append(node_a)
+            
+        self.a_levels[level] = actions
 
     def add_literal_level(self, level):
         """ add an S (literal) level to the Planning Graph
@@ -320,14 +361,37 @@ class PlanningGraph():
         :return:
             adds S nodes to the current level in self.s_levels[level]
         """
-        # TODO add literal S level to the planning graph as described in the Russell-Norvig text
-        # 1. determine what literals to add
-        # 2. connect the nodes
-        # for example, every A node in the previous level has a list of S nodes in effnodes that represent the effect
-        #   produced by the action.  These literals will all be part of the new S level.  Since we are working with sets, they
-        #   may be "added" to the set without fear of duplication.  However, it is important to then correctly create and connect
-        #   all of the new S nodes as children of all the A nodes that could produce them, and likewise add the A nodes to the
-        #   parent sets of the S nodes
+
+        if level < 1:
+            raise Exception("add_literal_level: Invalid level")
+
+        # inflate the a_levels array with placeholders, otherwise it will fail to assign a new level.
+        # e.g. assigning self.a_levels[0] to an empty array will throw exceptions
+        offset = level - len(self.s_levels) + 1
+        for i in range(offset):
+            self.s_levels.append([])
+
+        # initialize the literal dictionry to hold all the s_nodes from the previous level of actions
+        # format:
+        # {
+        #   hash of the node: instance of the node
+        # }
+        literals = {}
+        for action in self.a_levels[level - 1]:
+            # initialize the list of effect nodes for this action with the original effect nodes list
+            # because different actions might produce same effect nodes for the same level and thus causes duplication,
+            # the "literal" object created above is to make sure the uniqueness of s_nodes.
+            # In addition, if an action produces a duplication, we update the reference of the node with the existing one in the cache
+            effect_listerals = list(action.effect_s_nodes())
+            for index, node in enumerate(effect_listerals):
+                if node not in literals:
+                    literals[node] = node
+                else:
+                    effect_listerals[index] = literals[node]
+            
+            action.effnodes = set(effect_listerals)
+
+        self.s_levels[level] = list(literals.values())
 
     def update_a_mutex(self, nodeset):
         """ Determine and update sibling mutual exclusion for A-level nodes
